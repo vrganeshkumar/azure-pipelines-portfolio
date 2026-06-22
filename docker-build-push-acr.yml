@@ -1,0 +1,44 @@
+# docker-build-push-acr.yml
+# Builds a container image and pushes it to Azure Container Registry,
+# tagged with the build number for traceability.
+
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  dockerRegistryServiceConnection: 'YOUR_ACR_SERVICE_CONNECTION'
+  imageRepository: 'YOUR_IMAGE_NAME'
+  containerRegistry: 'YOURREGISTRY.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+stages:
+  - stage: BuildAndPush
+    displayName: 'Build and Push Image'
+    jobs:
+      - job: Build
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: Docker@2
+            displayName: 'Build image'
+            inputs:
+              command: 'build'
+              repository: '$(imageRepository)'
+              dockerfile: '$(dockerfilePath)'
+              containerRegistry: '$(dockerRegistryServiceConnection)'
+              tags: |
+                $(tag)
+                latest
+
+          - task: Docker@2
+            displayName: 'Push image to ACR'
+            inputs:
+              command: 'push'
+              repository: '$(imageRepository)'
+              containerRegistry: '$(dockerRegistryServiceConnection)'
+              tags: |
+                $(tag)
+                latest

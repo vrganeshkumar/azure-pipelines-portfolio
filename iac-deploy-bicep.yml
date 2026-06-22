@@ -1,0 +1,73 @@
+# iac-deploy-bicep.yml
+# Validates and deploys Bicep templates. Runs a what-if preview before every
+# real deployment so reviewers can see exactly what will change.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - 'bicep/**'
+
+variables:
+  azureSubscription: 'YOUR_SERVICE_CONNECTION_NAME'
+  resourceGroupName: 'YOUR_RESOURCE_GROUP'
+  location: 'centralindia'
+  templateFile: 'bicep/main.bicep'
+  parametersFile: 'bicep/main.parameters.json'
+
+stages:
+
+  - stage: ValidateAndPreview
+    displayName: 'Validate & What-If'
+    jobs:
+      - job: WhatIf
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Bicep build (lint/compile check)'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az bicep build --file $(templateFile)
+
+          - task: AzureCLI@2
+            displayName: 'What-if preview'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az deployment group what-if \
+                  --resource-group $(resourceGroupName) \
+                  --template-file $(templateFile) \
+                  --parameters $(parametersFile)
+
+  - stage: Deploy
+    displayName: 'Deploy Infrastructure'
+    dependsOn: ValidateAndPreview
+    condition: succeeded()
+    jobs:
+      - deployment: DeployInfra
+        environment: 'infra-prod'   # add an approval check here before infra changes go live
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: 'Deploy Bicep template'
+                  inputs:
+                    azureSubscription: '$(azureSubscription)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      az deployment group create \
+                        --resource-group $(resourceGroupName) \
+                        --template-file $(templateFile) \
+                        --parameters $(parametersFile)
